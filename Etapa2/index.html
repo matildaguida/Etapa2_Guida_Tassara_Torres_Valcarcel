@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Riley — Ondas Interactivas</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;1,300&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --cream: #f5f0e8;
+      --muted: rgba(80, 65, 50, 0.45);
+      --label: rgba(80, 65, 50, 0.7);
+    }
+
+    body {
+      background: var(--cream);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      padding: 2rem 1rem;
+      gap: 1.4rem;
+    }
+
+    header { text-align: center; color: var(--label); }
+    header h1 { font-size: 11px; font-weight: 300; text-transform: uppercase; letter-spacing: 0.25em; }
+    header p  { font-size: 10px; font-weight: 300; font-style: italic; margin-top: 3px; opacity: 0.7; }
+
+    #canvas-wrap { position: relative; cursor: crosshair; }
+    canvas { display: block; box-shadow: 0 4px 24px rgba(120,90,60,0.12), 0 1px 4px rgba(120,90,60,0.08); }
+
+    #dots { display: flex; gap: 7px; justify-content: center; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); transition: transform 0.3s, background 0.3s; }
+    .dot.active { background: rgba(80,65,50,0.75); transform: scale(1.35); }
+
+    footer { font-size: 9.5px; font-weight: 300; font-style: italic; color: var(--muted); letter-spacing: 0.1em; text-align: center; line-height: 1.9; }
+
+    #toast {
+      position: fixed; bottom: 2rem; left: 50%;
+      transform: translateX(-50%) translateY(10px);
+      background: rgba(60,45,30,0.75); color: rgba(245,240,232,0.92);
+      font-family: 'Cormorant Garamond', serif; font-size: 11px; font-style: italic;
+      letter-spacing: 0.15em; padding: 6px 18px; border-radius: 2px;
+      opacity: 0; transition: opacity 0.4s, transform 0.4s;
+      pointer-events: none; white-space: nowrap;
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Ondas — Bridget Riley</h1>
+  <p>recreación interactiva</p>
+</header>
+
+<div id="canvas-wrap"></div>
+<div id="dots"></div>
+
+<footer>
+  click · cambiar paleta &nbsp;·&nbsp; arrastrar horizontalmente · animar ondas
+</footer>
+
+<div id="toast"></div>
+
+<script>
+const PALETTES = [
+  {
+    name: "paleta 1",
+    bg: [245, 238, 228],
+    stripes: [
+      [50, 180, 60],
+      [140, 155, 210],
+      [245, 238, 228],
+      [170, 170, 175],
+      [235, 130, 115]
+    ]
+  },
+  {
+    name: "paleta 2",
+    bg: [245, 238, 228],
+    stripes: [
+      [50, 180, 60],
+      [235, 130, 115],
+      [245, 238, 228],
+      [170, 170, 175],
+      [140, 155, 210]
+    ]
+  },
+  {
+    name: "paleta 3",
+    bg: [245, 238, 228],
+    stripes: [
+      [50, 180, 60],
+      [140, 155, 210],
+      [245, 238, 228],
+      [170, 170, 175],
+      [235, 130, 115]
+    ]
+  }
+];
+
+// Dots
+const dotsEl = document.getElementById('dots');
+PALETTES.forEach((_, i) => {
+  const d = document.createElement('div');
+  d.className = 'dot' + (i === 0 ? ' active' : '');
+  dotsEl.appendChild(d);
+});
+function updateDots(idx) {
+  dotsEl.querySelectorAll('.dot').forEach((d, i) => d.classList.toggle('active', i === idx));
+}
+
+// Toast
+let toastTimer;
+const toastEl = document.getElementById('toast');
+function showToast(txt) {
+  toastEl.textContent = txt;
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1500);
+}
+
+// p5 sketch
+new p5(function(p) {
+  const W = 560, H = 920, NUM = 32, AMP = 38;
+  let palIdx = 0, animOffset = 0, animSpeed = 0, animating = false;
+  let isDragging = false, dragStartX = 0, dragCurrentX = 0;
+  let currentColors, targetColors, lerpT = 1;
+  const LERP_DUR = 40;
+
+  function paletteToFloats(idx) {
+    return {
+      bg: PALETTES[idx].bg.map(v => v/255),
+      s:  PALETTES[idx].stripes.map(c => c.map(v => v/255))
+    };
+  }
+
+  function lerp3(a, b, t) { return [a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t, a[2]+(b[2]-a[2])*t]; }
+  function getBg()       { return lerpT>=1 ? currentColors.bg : lerp3(currentColors.bg, targetColors.bg, lerpT); }
+  function getStripe(i)  {
+    const ai = i % currentColors.s.length;
+    if (lerpT >= 1) return currentColors.s[ai];
+    return lerp3(currentColors.s[ai], targetColors.s[i % targetColors.s.length], lerpT);
+  }
+
+  p.setup = function() {
+    p.createCanvas(W, H).parent('canvas-wrap');
+    p.noStroke();
+    currentColors = targetColors = paletteToFloats(0);
+  };
+
+  p.draw = function() {
+    if (lerpT < 1) lerpT = Math.min(1, lerpT + 1/LERP_DUR);
+    if (animating) { animOffset += animSpeed; animSpeed *= 0.96; if (Math.abs(animSpeed) < 0.04) { animating = false; animSpeed = 0; } }
+
+    const bg = getBg();
+    p.background(bg[0]*255, bg[1]*255, bg[2]*255);
+
+    const sw = W / (NUM - 1);
+    const extraAmp = Math.min(Math.abs(animSpeed) * 1.8, 30);
+
+    for (let i = 0; i < NUM; i++) {
+      const sc = getStripe(i);
+      p.fill(sc[0]*255, sc[1]*255, sc[2]*255);
+      p.beginShape();
+      for (let y = 0; y <= H; y += 4) {
+        const prog = y/H;
+        const wave = Math.sin(prog*Math.PI*3.8 + i*0.6 + animOffset*0.045)*(AMP+extraAmp)
+                   + Math.sin(prog*Math.PI*7.2 + i*1.1 + animOffset*0.08)*12;
+        p.vertex(i*sw + wave, y);
+      }
+      for (let y = H; y >= 0; y -= 4) {
+        const prog = y/H;
+        const wave = Math.sin(prog*Math.PI*3.8 + (i+1)*0.6 + animOffset*0.045)*(AMP+extraAmp)
+                   + Math.sin(prog*Math.PI*7.2 + (i+1)*1.1 + animOffset*0.08)*12;
+        p.vertex(i*sw + sw + wave, y);
+      }
+      p.endShape(p.CLOSE);
+    }
+
+    p.fill(bg[0]*255, bg[1]*255, bg[2]*255, 85);
+    p.rect(0, 0, W, 72);
+    p.rect(0, H-72, W, 72);
+  };
+
+  function switchPalette() {
+    currentColors = { bg: getBg(), s: Array.from({length: PALETTES[palIdx].stripes.length}, (_, i) => getStripe(i)) };
+    palIdx = (palIdx + 1) % PALETTES.length;
+    targetColors = paletteToFloats(palIdx);
+    lerpT = 0;
+    updateDots(palIdx);
+    showToast(PALETTES[palIdx].name);
+  }
+
+  p.mousePressed  = function() { isDragging=true; dragStartX=dragCurrentX=p.mouseX; animating=false; animSpeed=0; };
+  p.mouseDragged  = function() { if(!isDragging)return; const dx=p.mouseX-dragCurrentX; dragCurrentX=p.mouseX; animOffset+=dx*0.55; animSpeed=dx*0.55; };
+  p.mouseReleased = function() { if(Math.abs(p.mouseX-dragStartX)<5) switchPalette(); else animating=true; isDragging=false; };
+  p.touchStarted  = function() { p.mousePressed();  return false; };
+  p.touchMoved    = function() { p.mouseDragged();   return false; };
+  p.touchEnded    = function() { p.mouseReleased();  return false; };
+});
+</script>
+</body>
+</html>
